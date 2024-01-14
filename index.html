@@ -11,12 +11,15 @@
             align-items: center;
             height: 100vh;
             background-color: #1a1a1a;
+            background-image: url(bg_image.jpg);
+
             color: #fff;
             margin: 0;
         }
 
         .container {
             text-align: center;
+            background-color: #000000a8;
         }
 
         h1 {
@@ -44,6 +47,9 @@
             border: 2px solid #007bff;
             border-radius: 8px;
             transition: transform 0.3s;
+            height: 400px;
+            width: 400px;
+            
         }
 
         canvas:hover {
@@ -75,7 +81,7 @@
         <button type="button" class="btn btn-danger" onclick="stopAudio()">
             <i class="fas fa-stop"></i> Stop
         </button>
-        <div class="mt-4">
+        <div class="mt-5">
             <canvas id="canvas"></canvas>
         </div>
         <div id="label-container" class="mt-4"></div>
@@ -101,7 +107,7 @@
             imageModel = await tmImage.load(imageModelURL, imageMetadataURL);
             maxPredictions = Math.max(poseModel.getTotalClasses(), imageModel.getTotalClasses());
 
-            const size = 200;
+            const size = 400;
             const flip = true;
             webcam = new tmPose.Webcam(size, size, flip);
             await webcam.setup();
