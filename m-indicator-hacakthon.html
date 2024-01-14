@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #1a1a1a;
+            color: #fff;
+            margin: 0;
+        }
+
+        .container {
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        #logo {
+            max-width: 150px;
+            height: auto;
+            margin-bottom: 2rem;
+        }
+
+        button {
+            margin: 1rem;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        button:hover {
+            background-color: #007bff;
+            color: #fff;
+        }
+
+        canvas {
+            border: 2px solid #007bff;
+            border-radius: 8px;
+            transition: transform 0.3s;
+        }
+
+        canvas:hover {
+            transform: scale(1.05);
+        }
+
+        #label-container {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .label {
+            margin: 0.5rem;
+            padding: 0.5rem;
+            background-color: #007bff;
+            color: #fff;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>S-Indicator: Smart Camera Signal System</h1>
+        <button type="button" class="btn btn-primary" onclick="init()">
+            <i class="fas fa-play"></i> Start
+        </button>
+        <button type="button" class="btn btn-danger" onclick="stopAudio()">
+            <i class="fas fa-stop"></i> Stop
+        </button>
+        <div class="mt-4">
+            <canvas id="canvas"></canvas>
+        </div>
+        <div id="label-container" class="mt-4"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <script type="text/javascript">
+        const poseURL = "https://teachablemachine.withgoogle.com/models/5zzOzY1L4/";
+        const imageURL = "https://teachablemachine.withgoogle.com/models/3EwcDUxQU/";
+
+        let poseModel, imageModel, webcam, ctx, labelContainer, maxPredictions;
+        let isAudioPlaying = false;
+
+        async function init() {
+            const poseModelURL = poseURL + "model.json";
+            const poseMetadataURL = poseURL + "metadata.json";
+            const imageModelURL = imageURL + "model.json";
+            const imageMetadataURL = imageURL + "metadata.json";
+
+            poseModel = await tmPose.load(poseModelURL, poseMetadataURL);
+            imageModel = await tmImage.load(imageModelURL, imageMetadataURL);
+            maxPredictions = Math.max(poseModel.getTotalClasses(), imageModel.getTotalClasses());
+
+            const size = 200;
+            const flip = true;
+            webcam = new tmPose.Webcam(size, size, flip);
+            await webcam.setup();
+            await webcam.play();
+            window.requestAnimationFrame(loop);
+
+            const canvas = document.getElementById("canvas");
+            canvas.width = size; canvas.height = size;
+            ctx = canvas.getContext("2d");
+            labelContainer = document.getElementById("label-container");
+            for (let i = 0; i < maxPredictions; i++) {
+                labelContainer.appendChild(document.createElement("div"));
+            }
+        }
+
+        async function loop(timestamp) {
+            webcam.update();
+            await predict();
+            window.requestAnimationFrame(loop);
+        }
+
+        async function predict() {
+            const { pose, posenetOutput } = await poseModel.estimatePose(webcam.canvas);
+            const posePredictions = await poseModel.predict(posenetOutput);
+            const imagePredictions = await imageModel.predict(webcam.canvas);
+
+            for (let i = 0; i < maxPredictions; i++) {
+                const poseClass = posePredictions[i]?.className;
+                const poseProbability = posePredictions[i]?.probability.toFixed(2);
+                const imageClass = imagePredictions[i]?.className;
+                const imageProbability = imagePredictions[i]?.probability.toFixed(2);
+
+                if ((poseProbability > 0.90 && poseClass !== "normal") || (imageProbability > 0.90 && imageClass !== "normal")) {
+                    if (!isAudioPlaying) {
+                        isAudioPlaying = true;
+                        let utterance;
+                        if (poseProbability > 0.90 && poseClass !== "normal") {
+                            utterance = new SpeechSynthesisUtterance(`The driver is ${poseClass}`);
+                            labelContainer.childNodes[i].innerHTML = `Pose: ${poseClass}`;
+                        } else if (imageProbability > 0.90 && imageClass !== "normal") {
+                            utterance = new SpeechSynthesisUtterance(`There is a ${imageClass} sign board ahead`);
+                            labelContainer.childNodes[i].innerHTML = `Image: ${imageClass}`;
+                        }
+                        window.speechSynthesis.speak(utterance);
+                        utterance.onend = () => isAudioPlaying = false;
+                    }
+                } else {
+                    labelContainer.childNodes[i].innerHTML = '';
+                }
+            }
+
+            drawPose(pose);
+        }
+
+        function drawPose(pose) {
+            if (webcam.canvas) {
+                ctx.drawImage(webcam.canvas, 0, 0);
+                if (pose) {
+                    const minPartConfidence = 0.5;
+                    tmPose.drawKeypoints(pose.keypoints, minPartConfidence, ctx);
+                    tmPose.drawSkeleton(pose.keypoints, minPartConfidence, ctx);
+                }
+            }
+        }
+
+        function stopAudio() {
+            if (isCameraActive) {
+                webcam.stop();
+                isCameraActive = false;
+            }
+        }
+    </script>
+
+    <script src="https://kit.fontawesome.com/your-fontawesome-kit.js" crossorigin="anonymous"></script>
+</body>
+
+</html>
